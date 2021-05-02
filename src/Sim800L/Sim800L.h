@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include <helpers/concatStr.h>
+#include <memory>
 
 class Sim800L {
 private:
@@ -16,7 +17,7 @@ private:
     byte waitForStream();
 protected:
 public:
-    bool sendCommand(const char cmd[], const char expectedResponse[]);
+    std::unique_ptr<char[]> sendCommand(const char cmd[]);
     explicit Sim800L(Stream *_stream, bool _is_debug = false);
     bool initBASE();
     bool initGPRS(const char APN_data[]);

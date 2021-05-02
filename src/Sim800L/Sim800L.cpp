@@ -10,45 +10,72 @@ Sim800L::Sim800L(Stream *_stream, bool _is_debug) :
 bool Sim800L::initGPRS(const char APN_data[]) {
     char base_command[] = "AT+CSTT=";
     auto cmd = concatStr(base_command, APN_data);
-    sendCommand(cmd.get(), "OK");
-    sendCommand("AT+CIICR", "OK");
-    sendCommand("AT+CIFSR", "");
-    return true;
+    auto response0 = sendCommand(cmd.get());
+    if (response0) {
+        Serial.print(response0.get());
+        auto response1 = sendCommand("AT+CIICR");
+        if (response1) {
+            Serial.print(response1.get());
+            auto response2 = sendCommand("AT+CIFSR");
+            if (response2) {
+                Serial.print(response2.get());
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 bool Sim800L::initBASE() {
-    return (
-            sendCommand("AT", "OK") &&
-            sendCommand("AT+CPIN?", "+CPIN: READY")
-    );
+    auto response0 = sendCommand("AT");
+    if (response0) {
+        Serial.print(response0.get());
+        auto response1 = sendCommand("AT+CPIN?");
+        if (response1) {
+            Serial.print(response1.get());
+            return true;
+        }
+    }
+    return false;
 }
 
 
-bool Sim800L::sendCommand(const char cmd[], const char expectedResponse[]) {
-    const size_t buff_size = 128;
+std::unique_ptr<char[]> Sim800L::sendCommand(const char cmd[]) {
+    const size_t buff_size = 129;
     char buff[buff_size];
-    size_t buff_taken = 1;
+    size_t char_stored = 0;
     stream->println(cmd);
     stream->flush();
-    while ((buff_taken < 3 || buff[buff_taken - 3] != '\r') && waitForStream()) {
-        size_t bytes_read = stream->readBytes(buff + buff_taken - 1, buff_size - buff_taken);
-        buff_taken += bytes_read;
-        buff[buff_taken - 1] = '\0';
+    bool was_response;
+    while ((char_stored < 2 || (buff[char_stored - 2] != '\r' && buff[char_stored - 1] != '\n')) &&
+           (was_response = waitForStream())) {
+        size_t bytes_read = stream->readBytes(buff + char_stored, buff_size - char_stored - 1);
+        char_stored += bytes_read;
+        buff[char_stored] = '\0';
     }
-    char *tmp = buff;
-    size_t prev_len = 0;
-    for (size_t i = 0; i < buff_taken - 1; i++) {
-        if (buff[i] == '\n') {
-            buff[i] = '\0';
-            Serial.print(strlen(tmp));
-            Serial.print(':');
-            Serial.println(tmp);
-            tmp = &buff[i + 1];
-        } else if (buff[i] == '\r') {
-            buff[i] = '\0';
+    if (was_response) {
+        char *new_line_ptr = strchr(buff, '\n');
+        *new_line_ptr = '\0';
+        if (strncmp(buff, cmd, strlen(cmd)) == 0) {
+            Serial.println("Command received good");
+            auto new_str = std::unique_ptr<char[]>(new char[strlen(new_line_ptr+1) + 1]);
+            strcpy(new_str.get(), new_line_ptr+1);
+            return new_str;
+        } else {
+            Serial.println("=======");
+            Serial.println("Command was not delivered!");
+            Serial.print("Command was: ");
+            Serial.println(cmd);
+            Serial.println("=======");
         }
+    } else {
+        Serial.println("=======");
+        Serial.println("Response Timeout!");
+        Serial.print("On command: ");
+        Serial.println(cmd);
+        Serial.println("=======");
     }
-    return true;
+    return nullptr;
 }
 
 byte Sim800L::waitForStream() {
