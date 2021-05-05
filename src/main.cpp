@@ -40,9 +40,11 @@ void setup() {
 
     SIM800L_Serial.begin(9600);
     SIM800L_Serial.setTimeout(5);
-    gsmM = new Sim800L(&SIM800L_Serial, true);
+    gsmM = new Sim800L(&SIM800L_Serial, restart_gsm, true);
     gsmM->initBASE();
     gsmM->initGPRS(R"("internet.lmt.lv","","")");
+    gsmM->setSSL();
+    gsmM->send_file();
 
     butt.pullUp();
     butt.attach(HOLDED_HANDLER, restart_gsm);
@@ -53,15 +55,11 @@ unsigned long last_check;
 void loop() {
     butt.tick();
 
-//    if(SIM800L_Serial.available())
-//    {
-//        Grsp = SIM800L_Serial.readString();
-//        Serial.println(Grsp);
-//    }
-//
-//    if(Serial.available())
-//    {
-//        Arsp = Serial.readString();
-//        SIM800L_Serial.println(Arsp);
-//    }
+    if (Serial.available()) {
+        SIM800L_Serial.write(Serial.read());
+    }
+
+    if (SIM800L_Serial.available()) {
+        Serial.write(SIM800L_Serial.read());
+    }
 }

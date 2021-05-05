@@ -9,18 +9,40 @@
 #include <helpers/concatStr.h>
 #include <memory>
 
+#define default_timeOut_ms 15000
+enum NetworkRegistration {
+    NOT_REGISTERED, REGISTERED_HOME, SEARCHING, DENIED, NET_UNKNOWN, REGISTERED_ROAMING, NET_ERROR
+};
+
 class Sim800L {
 private:
     bool is_debug;
-    const unsigned long timeOut_ms = 10000;
     Stream *stream = nullptr;
-    byte waitForStream();
+
+    byte waitForStream(uint32_t timeOut_ms = default_timeOut_ms);
+
+    void (*rst_handler)();
+
 protected:
+    std::unique_ptr<char[]> sendCommand(
+            const char cmd[], uint32_t timeOut_ms = default_timeOut_ms);
+
 public:
-    std::unique_ptr<char[]> sendCommand(const char cmd[]);
-    explicit Sim800L(Stream *_stream, bool _is_debug = false);
+    int getSignal();
+
+    NetworkRegistration getRegistrationStatus();
+
+    Sim800L(Stream *_stream, void (*_rst_handler)(), bool _is_debug = false);
+
+    static bool has_OK(char response[]);
+
     bool initBASE();
+
     bool initGPRS(const char APN_data[]);
+
+    bool send_file();
+
+    bool setSSL();
 };
 
 
