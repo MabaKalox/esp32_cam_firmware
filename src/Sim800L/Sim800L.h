@@ -27,6 +27,8 @@ protected:
     std::unique_ptr<char[]> sendCommand(
             const char cmd[], uint32_t timeOut_ms = default_timeOut_ms);
 
+    std::unique_ptr<char[]> readResponse(const uint32_t& timeOut_ms = default_timeOut_ms);
+
 public:
     int getSignal();
 

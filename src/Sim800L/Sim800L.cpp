@@ -9,7 +9,8 @@
 #define AT_CMD_OBTAIN_IP "AT+CIFSR"
 #define AT_GET_CPIN "AT+CPIN?"
 #define AT_SET_APN "AT+CSTT="
-#define AT_GET_REG "AT+CSQ"
+#define AT_GET_SIGNAL "AT+CSQ"
+#define AT_GET_REG "AT+CREG?"
 #define AT_SET_SSL "AT+CIPSSL=1"
 
 #define AT_RSP_OK "OK"
@@ -68,25 +69,17 @@ bool Sim800L::initBASE() {
 }
 
 std::unique_ptr<char[]> Sim800L::sendCommand(const char cmd[], uint32_t timeOut_ms) {
-    const size_t buff_size = 129;
-    char buff[buff_size];
-    size_t char_stored = 0;
     stream->println(cmd);
     stream->flush();
-    bool was_response;
-    while ((char_stored < 2 || (buff[char_stored - 2] != '\r' && buff[char_stored - 1] != '\n')) &&
-           (was_response = waitForStream(timeOut_ms))) {
-        size_t bytes_read = stream->readBytes(buff + char_stored, buff_size - char_stored - 1);
-        char_stored += bytes_read;
-        buff[char_stored] = '\0';
-    }
-    if (was_response) {
-        char *new_line_ptr = strchr(buff, '\n');
+
+    auto serial_response = readResponse();
+    if (serial_response) {
+        char *new_line_ptr = strchr(serial_response.get(), '\n');
         *new_line_ptr = '\0';
-        if (strncmp(buff, cmd, strlen(cmd)) == 0) {
+        if (strncmp(serial_response.get(), cmd, strlen(cmd)) == 0) {
             if (is_debug) {
                 Serial.print("Command was: ");
-                Serial.println(buff);
+                Serial.println(serial_response.get());
                 Serial.print("Response is: ");
                 Serial.print(new_line_ptr + 1);
             }
@@ -96,7 +89,7 @@ std::unique_ptr<char[]> Sim800L::sendCommand(const char cmd[], uint32_t timeOut_
         } else {
             if (is_debug) {
                 Serial.println("=======");
-                Serial.println("Command was not delivered!");
+                Serial.println("Not delivered!");
                 Serial.print("Command was: ");
                 Serial.println(cmd);
                 Serial.println("=======");
@@ -132,7 +125,7 @@ byte Sim800L::waitForStream(uint32_t timeOut_ms) {
 }
 
 int Sim800L::getSignal() {
-    auto response = sendCommand(AT_GET_REG);
+    auto response = sendCommand(AT_GET_SIGNAL);
     if (response && has_OK(response.get()) && strncmp(response.get(), "+CSQ: ", 6) == 0) {
         int signal = 0;
         if (response[7] != ',') {
@@ -155,7 +148,7 @@ int Sim800L::getSignal() {
 }
 
 NetworkRegistration Sim800L::getRegistrationStatus() {
-    auto response = sendCommand("AT+CREG?");
+    auto response = sendCommand(AT_GET_REG);
     if (response && strncmp(response.get(), "+CREG: ", 7) == 0) {
         char val = response[9];
         switch (val) {
@@ -187,10 +180,28 @@ bool Sim800L::setSSL() {
 
 bool Sim800L::send_file() {
     auto init_tcp_response = sendCommand(R"(AT+CIPSTART="TCP","142.93.111.54",443)");
-    waitForStream();
-
-    delay(5000);
+    {
+        auto is_connected = readResponse();
+        Serial.println(is_connected.get());
+    }
     auto stop_tcp_response = sendCommand("AT+CIPSHUT");
 
     return true;
+}
+
+std::unique_ptr<char[]> Sim800L::readResponse(const uint32_t &timeOut_ms) {
+    size_t char_stored = 0;
+    byte available;
+    std::unique_ptr<char[]> response = nullptr;
+    while ((char_stored < 2 || (response[char_stored - 2] != '\r' && response[char_stored - 1] != '\n')) &&
+           (available = waitForStream(timeOut_ms))) {
+        char *ptr = response.release();
+        ptr = (char *) realloc(ptr, char_stored + available + 1);
+        response = std::unique_ptr<char[]>(ptr);
+
+        stream->readBytes(response.get() + char_stored, available);
+        char_stored += available;
+        response[char_stored] = '\0';
+    }
+    return response;
 }
