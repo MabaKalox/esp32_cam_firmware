@@ -43,7 +43,7 @@ void setup() {
     gsmM = new Sim800L(&SIM800L_Serial, restart_gsm, true);
     gsmM->initBASE();
     gsmM->initGPRS(R"("internet.lmt.lv","","")");
-    gsmM->setSSL();
+//    gsmM->setSSL();
     gsmM->send_file();
 
     butt.pullUp();

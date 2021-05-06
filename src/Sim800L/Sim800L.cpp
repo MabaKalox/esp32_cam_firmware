@@ -15,7 +15,11 @@
 
 #define AT_RSP_OK "OK"
 #define AT_RSP_CPIN_READY "+CPIN: READY"
-#define CONNECT_OK "CONNECT OK"
+#define AT_RSP_CONNECT_OK "CONNECT OK"
+
+#define HEADERS "POST /images/upload_image/ HTTP/1.1\r\nHost: 142.93.111.54\r\nContent-Length: 309\r\nContent-Type: multipart/form-data; boundary=---------------------------9755227392164441747325250978\r\n\r\n"
+#define BODY_HEAD "-----------------------------9755227392164441747325250978\r\nContent-Disposition: form-data; name=\"file\"; filename=\"1x1.png\"\r\nContent-Type: image/png\r\n\r\n"
+#define BODY_TAIL "\r\n-----------------------------9755227392164441747325250978--\r\n\r\n"
 
 Sim800L::Sim800L(Stream *_stream, void (*_rst_handler)(), bool _is_debug) :
         is_debug(_is_debug), stream(_stream), rst_handler(_rst_handler) {}
@@ -72,7 +76,7 @@ std::unique_ptr<char[]> Sim800L::sendCommand(const char cmd[], uint32_t timeOut_
     stream->println(cmd);
     stream->flush();
 
-    auto serial_response = readResponse();
+    auto serial_response = readResponse(timeOut_ms);
     if (serial_response) {
         char *new_line_ptr = strchr(serial_response.get(), '\n');
         *new_line_ptr = '\0';
@@ -179,20 +183,42 @@ bool Sim800L::setSSL() {
 }
 
 bool Sim800L::send_file() {
-    auto init_tcp_response = sendCommand(R"(AT+CIPSTART="TCP","142.93.111.54",443)");
-    {
-        auto is_connected = readResponse();
-        Serial.println(is_connected.get());
+    auto init_tcp_response = sendCommand(R"(AT+CIPSTART="TCP","142.93.111.54",8012)");
+    auto is_connected = readResponse(10000);
+    if (!is_connected || !strstr(is_connected.get(), AT_RSP_CONNECT_OK)) {
+        if (is_debug) Serial.print(is_connected.get());
+        return false;
     }
-    auto stop_tcp_response = sendCommand("AT+CIPSHUT");
+    if (!SPIFFS.begin()) return false;
+    auto file = SPIFFS.open("/1x1.png");
+    auto file_buff = std::unique_ptr<char[]>(new char[file.size()]);
+    file.readBytes(file_buff.get(), file.size());
 
+    size_t size = strlen(HEADERS) + strlen(BODY_HEAD) + file.size() + strlen(BODY_TAIL);
+    char totalLen_str[11];
+    sprintf(totalLen_str, "%u", size);
+    stream->println(concatStr("AT+CIPSEND=", totalLen_str).get());
+    delay(2000);
+    stream->write(HEADERS);
+    stream->write(BODY_HEAD);
+    for (size_t i = 0; i < file.size(); i++) {
+        stream->write(file_buff[i]);
+    }
+    stream->write(BODY_TAIL);
+
+    file.close();
+//    auto stop_tcp_response = sendCommand("AT+CIPSHUT");
+//    if (!stop_tcp_response || !strstr(stop_tcp_response.get(), "SHUT OK")) {
+//        if (is_debug) Serial.print(stop_tcp_response.get());
+//        return false;
+//    }
     return true;
 }
 
 std::unique_ptr<char[]> Sim800L::readResponse(const uint32_t &timeOut_ms) {
     size_t char_stored = 0;
-    byte available;
     std::unique_ptr<char[]> response = nullptr;
+    byte available;
     while ((char_stored < 2 || (response[char_stored - 2] != '\r' && response[char_stored - 1] != '\n')) &&
            (available = waitForStream(timeOut_ms))) {
         char *ptr = response.release();
@@ -203,5 +229,10 @@ std::unique_ptr<char[]> Sim800L::readResponse(const uint32_t &timeOut_ms) {
         char_stored += available;
         response[char_stored] = '\0';
     }
-    return response;
+    // check was while exit due to right line ending or because of timeout for new chars
+    if (available) {
+        return response;
+    } else {
+        return nullptr;
+    }
 }

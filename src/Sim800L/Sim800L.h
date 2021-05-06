@@ -8,6 +8,7 @@
 #include <Arduino.h>
 #include <helpers/concatStr.h>
 #include <memory>
+#include <SPIFFS.h>
 
 #define default_timeOut_ms 15000
 enum NetworkRegistration {
