@@ -17,7 +17,8 @@
 #define AT_RSP_CPIN_READY "+CPIN: READY"
 #define AT_RSP_CONNECT_OK "CONNECT"
 
-#define HEADERS "POST /images/upload_image/ HTTP/1.1\r\nHost: 142.93.111.54\r\nContent-Length: 71784\r\nContent-Type: multipart/form-data; boundary=---------------------------9755227392164441747325250978\r\n\r\n"
+#define HEADERS1 "POST /images/upload_image/?auto_name=true HTTP/1.1\r\nHost: 142.93.111.54\r\nContent-Length: "
+#define HEADERS2 "\r\nContent-Type: multipart/form-data; boundary=---------------------------9755227392164441747325250978\r\n\r\n"
 #define BODY_HEAD "-----------------------------9755227392164441747325250978\r\nContent-Disposition: form-data; name=\"file\"; filename=\"1x1.png\"\r\nContent-Type: image/png\r\n\r\n"
 #define BODY_TAIL "\r\n-----------------------------9755227392164441747325250978--\r\n\r\n"
 
@@ -188,9 +189,8 @@ bool Sim800L::setSSL() {
 }
 
 bool Sim800L::send_file() {
-    Serial.println("DONE");
-    auto init_tcp_response = sendCommand(R"(AT+CIPSTART="TCP","142.93.111.54",8012)");
-    auto is_connected = readResponse(10000);
+    auto init_tcp_response = sendCommand(R"(AT+CIPSTART="TCP","142.93.111.54",443)");
+    auto is_connected = readResponse();
     if (!is_connected || !strstr(is_connected.get(), AT_RSP_CONNECT_OK)) {
         if (is_debug) Serial.print(is_connected.get());
         return false;
@@ -200,43 +200,45 @@ bool Sim800L::send_file() {
     auto file_buff = std::unique_ptr<char[]>(new char[file.size()]);
     file.readBytes(file_buff.get(), file.size());
 
-    stream->write(HEADERS);
+    char body_ln[11];
+    sprintf(body_ln, "%u", strlen(BODY_HEAD) + file.size() + strlen(BODY_TAIL));
+    auto headers = concatStr(HEADERS1, body_ln, HEADERS2);
+    stream->write(headers.get());
     stream->flush();
-    delay(100);
+    delay(200);
 
     stream->write(BODY_HEAD);
     stream->flush();
-    delay(100);
-    Serial.println("DONE");
 
     size_t file_buff_len = file.size();
     char *file_ptr = file_buff.get();
-    for (size_t n = 0; n < file_buff_len; n = n + 2048) {
-        Serial.println("Send pocket!");
-        if (n + 2048 < file_buff_len) {
-            stream->write(file_ptr, 2048);
+    for (size_t n = 0; n < file_buff_len; n = n + 1024) {
+        if (n + 1024 < file_buff_len) {
+            stream->write(file_ptr, 1024);
             stream->flush();
-            delay(50);
-            file_ptr += 2048;
-        } else if (file_buff_len % 2048 > 0) {
-            size_t remainder = file_buff_len % 2048;
+            delay(200);
+            file_ptr += 1024;
+        } else if (file_buff_len % 1024 > 0) {
+            size_t remainder = file_buff_len % 1024;
             stream->write(file_ptr, remainder);
             stream->flush();
-            delay(50);
+            delay(200);
         }
     }
 
     stream->write(BODY_TAIL);
     stream->flush();
-    delay(50);
     Serial.println("DONE");
 
     file.close();
-//    auto stop_tcp_response = sendCommand("AT+CIPSHUT");
-//    if (!stop_tcp_response || !strstr(stop_tcp_response.get(), "SHUT OK")) {
-//        if (is_debug) Serial.print(stop_tcp_response.get());
-//        return false;
-//    }
+    delay(1200);
+    stream->write("+++");
+    delay(1200);
+    auto stop_tcp_response = sendCommand("AT+CIPSHUT");
+    if (!stop_tcp_response || !strstr(stop_tcp_response.get(), "SHUT OK")) {
+        if (is_debug) Serial.print(stop_tcp_response.get());
+        return false;
+    }
     return true;
 }
 

@@ -7,10 +7,11 @@
 
 #include <Arduino.h>
 #include <helpers/concatStr.h>
+#include "SoftwareSerial.h"
 #include <memory>
 #include <SPIFFS.h>
 
-#define default_timeOut_ms 15000
+#define default_timeOut_ms 20000
 enum NetworkRegistration {
     NOT_REGISTERED, REGISTERED_HOME, SEARCHING, DENIED, NET_UNKNOWN, REGISTERED_ROAMING, NET_ERROR
 };
