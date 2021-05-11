@@ -19,7 +19,7 @@
 
 #define HEADERS1 "POST /images/upload_image/?auto_name=true HTTP/1.1\r\nHost: 142.93.111.54\r\nContent-Length: "
 #define HEADERS2 "\r\nContent-Type: multipart/form-data; boundary=---------------------------9755227392164441747325250978\r\n\r\n"
-#define BODY_HEAD "-----------------------------9755227392164441747325250978\r\nContent-Disposition: form-data; name=\"file\"; filename=\"1x1.png\"\r\nContent-Type: image/png\r\n\r\n"
+#define BODY_HEAD "-----------------------------9755227392164441747325250978\r\nContent-Disposition: form-data; name=\"file\"; filename=\"1x1.png\"\r\nContent-Type: image/jpeg\r\n\r\n"
 #define BODY_TAIL "\r\n-----------------------------9755227392164441747325250978--\r\n\r\n"
 
 Sim800L::Sim800L(Stream *_stream, void (*_rst_handler)(), bool _is_debug) :
@@ -28,6 +28,13 @@ Sim800L::Sim800L(Stream *_stream, void (*_rst_handler)(), bool _is_debug) :
 bool Sim800L::initGPRS(const char APN_data[]) {
     auto response = sendCommand("AT+CIPMODE=1");
     if (!response) {
+        return false;
+    }
+    response.reset();
+
+    response = sendCommand("AT+CIPCCFG=8,1,1024,1,0,1460,50");
+    if (!response || !has_OK(response.get())) {
+        Serial.println(response.get());
         return false;
     }
 
@@ -54,7 +61,7 @@ bool Sim800L::initGPRS(const char APN_data[]) {
 }
 
 bool Sim800L::initBASE() {
-    rst_handler();
+//    rst_handler();
     std::unique_ptr<char[]> response0 = nullptr;
     while (!response0 || !has_OK(response0.get())) {
         response0.reset();
@@ -188,57 +195,51 @@ bool Sim800L::setSSL() {
     return response && has_OK(response.get());
 }
 
-bool Sim800L::send_file() {
+bool Sim800L::send_file(const uint8_t* file_buff, size_t file_buff_len) {
     auto init_tcp_response = sendCommand(R"(AT+CIPSTART="TCP","142.93.111.54",443)");
     auto is_connected = readResponse();
     if (!is_connected || !strstr(is_connected.get(), AT_RSP_CONNECT_OK)) {
         if (is_debug) Serial.print(is_connected.get());
         return false;
     }
-    if (!SPIFFS.begin()) return false;
-    auto file = SPIFFS.open("/heart.png");
-    auto file_buff = std::unique_ptr<char[]>(new char[file.size()]);
-    file.readBytes(file_buff.get(), file.size());
 
     char body_ln[11];
-    sprintf(body_ln, "%u", strlen(BODY_HEAD) + file.size() + strlen(BODY_TAIL));
+    sprintf(body_ln, "%u", strlen(BODY_HEAD) + file_buff_len + strlen(BODY_TAIL));
     auto headers = concatStr(HEADERS1, body_ln, HEADERS2);
     stream->write(headers.get());
-    stream->flush();
-    delay(200);
 
     stream->write(BODY_HEAD);
     stream->flush();
+    delay(120);
 
-    size_t file_buff_len = file.size();
-    char *file_ptr = file_buff.get();
+    const uint8_t *file_ptr = file_buff;
     for (size_t n = 0; n < file_buff_len; n = n + 1024) {
         if (n + 1024 < file_buff_len) {
             stream->write(file_ptr, 1024);
             stream->flush();
-            delay(200);
+            delay(120);
             file_ptr += 1024;
         } else if (file_buff_len % 1024 > 0) {
             size_t remainder = file_buff_len % 1024;
             stream->write(file_ptr, remainder);
             stream->flush();
-            delay(200);
+            delay(120);
         }
     }
 
     stream->write(BODY_TAIL);
     stream->flush();
-    Serial.println("DONE");
 
-    file.close();
-    delay(1200);
+    delay(2000);
     stream->write("+++");
     delay(1200);
-    auto stop_tcp_response = sendCommand("AT+CIPSHUT");
-    if (!stop_tcp_response || !strstr(stop_tcp_response.get(), "SHUT OK")) {
-        if (is_debug) Serial.print(stop_tcp_response.get());
-        return false;
-    }
+    Serial.println("Upload DONE");
+
+//    auto stop_tcp_response = sendCommand("AT+CIPSHUT");
+//    if (!stop_tcp_response || !strstr(stop_tcp_response.get(), "SHUT OK")) {
+//        if (is_debug) Serial.print(stop_tcp_response.get());
+//        return false;
+//    }
     return true;
 }
 

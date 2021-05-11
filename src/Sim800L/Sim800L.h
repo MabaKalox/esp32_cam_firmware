@@ -44,7 +44,7 @@ public:
 
     bool initGPRS(const char APN_data[]);
 
-    bool send_file();
+    bool send_file(const uint8_t* file_buff, size_t file_buff_len);
 
     bool setSSL();
 };
